@@ -1,40 +1,49 @@
-from flask import Flask, request
-import subprocess
+cat > app.py << 'EOF'
+from flask import Flask, request, jsonify
+from yt_dlp import YoutubeDL
 import os
 
 app = Flask(__name__)
 
-@app.route('/subs')
-def get_subtitles():
+@app.route('/')
+def home():
+    return "🎉 API is live and working!"
+
+@app.route('/subtitle', methods=['GET'])
+def get_subtitle():
     video_url = request.args.get('url')
     if not video_url:
-        return "❌ Please provide a YouTube URL using ?url=...", 400
-
-    # पुराने सबटाइटल्स हटाओ
-    for f in os.listdir():
-        if f.endswith(".vtt") or f.endswith(".srt"):
-            os.remove(f)
+        return jsonify({"error": "URL parameter is missing"}), 400
 
     try:
-        # yt-dlp से subtitle निकालो
-        subprocess.run([
-            'yt-dlp',
-            '--write-auto-sub',
-            '--skip-download',
-            '--sub-lang', 'en',
-            '--convert-subs', 'srt',
-            video_url
-        ], check=True)
+        ydl_opts = {
+            'skip_download': True,
+            'writesubtitles': True,
+            'writeautomaticsub': True,
+            'subtitleslangs': ['en'],
+            'subtitlesformat': 'srt',
+            'outtmpl': '%(title)s.%(ext)s'
+        }
 
-        # सर्च करके subtitle दिखाओ
-        for f in os.listdir():
-            if f.endswith('.srt'):
-                with open(f, 'r', encoding='utf-8') as subfile:
-                    return f"✅ Subtitles from: {f}\n\n" + subfile.read()
+        with YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(video_url, download=False)
+            ydl.download([video_url])
 
-        return "⚠️ No subtitles found.", 404
+        subtitle_file = None
+        for ext in ['en.srt', 'en.vtt']:
+            possible_file = f"{info['title']}.{ext}"
+            if os.path.exists(possible_file):
+                subtitle_file = possible_file
+                break
+
+        if subtitle_file:
+            with open(subtitle_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+            os.remove(subtitle_file)
+            return jsonify({"subtitles": content})
+        else:
+            return jsonify({"error": "Subtitle not found"}), 404
 
     except Exception as e:
-        return f"❌ Error: {str(e)}", 500
-
-app.run(host='0.0.0.0', port=3000)
+        return jsonify({"error": str(e)}), 500
+EOF
