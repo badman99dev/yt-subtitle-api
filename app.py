@@ -5,39 +5,43 @@ import yt_dlp
 app = Flask(__name__)
 CORS(app)
 
-@app.route("/", methods=["GET"])
-def home():
-    return "✅ YT Subtitle API is working."
-
-@app.route("/api", methods=["POST"])
+@app.route("/", methods=["POST"])
 def get_subtitles():
     try:
         data = request.get_json()
-        url = data.get("url")
+        video_url = data.get("url")
+        
+        if not video_url:
+            return jsonify({"error": "❌ URL missing!"}), 400
 
-        if not url:
-            return jsonify({"error": "❌ URL is required"}), 400
-
-        # yt-dlp options
         ydl_opts = {
-            "quiet": True,
-            "skip_download": True,
-            "writesubtitles": True,
-            "writeautomaticsub": True,
-            "subtitlesformat": "json",
+            'skip_download': True,
+            'writesubtitles': True,
+            'writeautomaticsub': True,
+            'subtitleslangs': ['en'],
+            'quiet': True,
+            'forcejson': True,
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
+            info = ydl.extract_info(video_url, download=False)
+            subtitles = info.get("automatic_captions", {}).get("en") or info.get("subtitles", {}).get("en")
 
-        return jsonify({
-            "title": info.get("title"),
-            "channel": info.get("channel"),
-            "subtitles": info.get("subtitles", {})
-        })
+            if not subtitles:
+                return jsonify({"error": "⚠️ Subtitle not found!"}), 404
+
+            return jsonify({
+                "title": info.get("title"),
+                "channel": info.get("uploader"),
+                "subtitles_url": subtitles[0].get("url")
+            })
 
     except Exception as e:
-        return jsonify({"error": f"😵 Error: {str(e)}"}), 500
+        return jsonify({"error": f"❌ Error: {str(e)}"}), 500
+
+@app.route("/", methods=["GET"])
+def home():
+    return "✅ YT Subtitle API is running!"
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run()
